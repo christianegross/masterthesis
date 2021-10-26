@@ -16,6 +16,10 @@ plot 'meascombined.txt' u 1:5 ls 1 title ''
 
 set out "meas.pdf"
 
+set yrange [0.7:0.75]
+
+plot 'measbeta1.4Nt8Ns8ordered.txt' u 0:1 ls 1 w lines title 'ordered', 'measbeta1.4Nt8Ns8random.txt' u 0:1 ls 2 w lines title 'random'
+
 set yrange [0:1]
 
 set xlabel 'configuration'

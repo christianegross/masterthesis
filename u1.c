@@ -17,12 +17,49 @@
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_vector.h>
 
+/** for a given position in the lattice, determines the single coordinates and determines neighbours with periodic boundary conditions
+ * position can also include direction, even if not taken by other functions
+ * **/
+void get_neighbours(int *neighbour, int position, int Nt, int Ns){
+    int pos=position;
+    int direction=pos%4;
+    int t, x, y, z;
+    pos-=direction;
+    z=(pos%(4*Ns))/4;
+    pos-=4*z;
+    y=(pos%(4*Ns*Ns))/(4*Ns);
+    pos-=4*Ns*y;
+    x=(pos%(4*Ns*Ns*Ns))/(4*Ns*Ns);
+    pos-=4*Ns*Ns*x;
+    t=(pos%(4*Ns*Ns*Ns*Nt))/(4*Ns*Ns*Ns);
+    pos-=4*Ns*Ns*Ns*t;
+    if (pos!=0){printf("check needed!\n");}
+    neighbour[0]=(t==Nt-1)  ?-(Nt-1)*Ns*Ns*Ns*4 :Ns*Ns*Ns*4 ;
+    neighbour[4]=(t==0)     ?(Nt-1)*Ns*Ns*Ns*4  :-Ns*Ns*Ns*4;
+    neighbour[1]=(x==Ns-1)  ?-(Ns-1)*Ns*Ns*4    :Ns*Ns*4    ;
+    neighbour[5]=(x==0)     ?(Ns-1)*Ns*Ns*4     :-Ns*Ns*4   ;
+    neighbour[2]=(y==Ns-1)  ?-(Ns-1)*Ns*4       :Ns*4       ;
+    neighbour[6]=(y==0)     ?(Ns-1)*Ns*4        :-Ns*4      ;
+    neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4          :4          ;
+    neighbour[7]=(z==0)     ?(Ns-1)*4           :-4         ;
+}
+
+//simple mean of a vector
 double mean(gsl_vector *vector, int length){
     double mean=0;
     for (int i=0; i<length; i+=1){
         mean+=gsl_vector_get(vector, i);
     }
     return mean/length;
+}
+
+//simple standard deviation of a vector with given mean
+double deviation(gsl_vector *vector, int length, double mean){
+    double var=0;
+    for (int i=0; i<length; i+=1){
+        var+=pow(gsl_vector_get(vector, i)-mean, 2);
+    }
+    return sqrt(var/length);
 }
 
 /**
@@ -119,11 +156,12 @@ double deltas(double *lattice, int *neighbour, int position, double beta, double
         oneloop*=beta*deltatau;
         sum+=oneloop;
     }}
-    return -sum;
+    return -sum; //- sign also in definition of plaquette
 }
 
-/** goes through the entire lattice and attempts to change each link once in an ordered sweep
+/** goes through the entire lattice and attempts to change links
  * value of the average plaquette is returned, average plaquette and acceptane rate are printed out for plotting
+ * can switch between ordered sweep through the lattice and random choosing of latticesites points per sweep
  * **/
 double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, FILE * stream, int Nt, int Ns, double delta){
     double change;  
@@ -142,46 +180,65 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
     /**
      * go through the entire lattice, calculate average plaquette
      * **/ 
-    int position;
-    for (int t=0;t<Nt;t+=1){
-         neighbour[0]=(t==Nt-1) ?-(Nt-1)*Ns*Ns*Ns*4:Ns*Ns*Ns*4;
-         neighbour[4]=(t==0)    ?(Nt-1)*Ns*Ns*Ns*4:-Ns*Ns*Ns*4;
-         for (int x=0;x<Ns;x+=1){
-            neighbour[1]=(x==Ns-1)  ?-(Ns-1)*Ns*Ns*4:Ns*Ns*4;
-            neighbour[5]=(x==0)     ?(Ns-1)*Ns*Ns*4:-Ns*Ns*4;
-            for (int y=0;y<Ns;y+=1){
-                neighbour[2]=(y==Ns-1)  ?-(Ns-1)*Ns*4:Ns*4;
-                neighbour[6]=(y==0)     ?(Ns-1)*Ns*4:-Ns*4;
-                for (int z=0;z<Ns;z+=1){
-                    neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4:4;
-                    neighbour[7]=(z==0)     ?(Ns-1)*4:-4;
-                    position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
-                    for (int mu=0;mu<4;mu+=1){
-                        change=gsl_ran_flat(generator, -delta, delta);
-                        if(exp(-deltas(lattice, neighbour, position, beta, deltatau, mu, change))>gsl_rng_uniform(generator)){
-                        //~ lattice[position+mu]=gsl_complex_mul(lattice[position+mu], gsl_complex_polar(1,change));
-                        lattice[position+mu]+=change;
-                        accept+=1;
-                        }
-                        for (int nu=0;nu<4;nu+=1){
-                            averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
-                        }
-                    }
-                }
-            }
+    int position, mu;
+    //~ for (int t=0;t<Nt;t+=1){
+         //~ neighbour[0]=(t==Nt-1) ?-(Nt-1)*Ns*Ns*Ns*4:Ns*Ns*Ns*4;
+         //~ neighbour[4]=(t==0)    ?(Nt-1)*Ns*Ns*Ns*4:-Ns*Ns*Ns*4;
+         //~ for (int x=0;x<Ns;x+=1){
+            //~ neighbour[1]=(x==Ns-1)  ?-(Ns-1)*Ns*Ns*4:Ns*Ns*4;
+            //~ neighbour[5]=(x==0)     ?(Ns-1)*Ns*Ns*4:-Ns*Ns*4;
+            //~ for (int y=0;y<Ns;y+=1){
+                //~ neighbour[2]=(y==Ns-1)  ?-(Ns-1)*Ns*4:Ns*4;
+                //~ neighbour[6]=(y==0)     ?(Ns-1)*Ns*4:-Ns*4;
+                //~ for (int z=0;z<Ns;z+=1){
+                    //~ neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4:4;
+                    //~ neighbour[7]=(z==0)     ?(Ns-1)*4:-4;
+                    //~ position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
+                    //~ get_neighbours(neighbour, position, Nt, Ns);
+                    //~ for (int mu=0;mu<4;mu+=1){
+                        //~ change=gsl_ran_flat(generator, -delta, delta);
+                        //~ if(exp(-deltas(lattice, neighbour, position, beta, deltatau, mu, change))>gsl_rng_uniform(generator)){
+                        //~ //lattice[position+mu]=gsl_complex_mul(lattice[position+mu], gsl_complex_polar(1,change));
+                        //~ lattice[position+mu]+=change;
+                        //~ accept+=1;
+                        //~ }
+                        //~ for (int nu=0;nu<4;nu+=1){
+                            //~ averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
+                        //~ }
+                    //~ }
+                //~ }
+            //~ }
+        //~ }
+    //~ }
+    for (int i=0; i<latticesites; i+=1){
+        position=gsl_rng_uniform_int(generator, latticesites);
+        get_neighbours(neighbour, position, Nt, Ns);
+        mu=position%4;
+        //have to account: mu is not in position as expected by plaquette, deltas, but is also randomly generated, so faster to put into same variable as position
+        position-=mu;
+        change=gsl_ran_flat(generator, -delta, delta);
+        if(exp(-deltas(lattice, neighbour, position, beta, deltatau, mu, change))>gsl_rng_uniform(generator)){
+            //lattice[position+mu]=gsl_complex_mul(lattice[position+mu], gsl_complex_polar(1,change));
+            lattice[position+mu]+=change;
+            accept+=1;
+        }
+        for (int nu=0;nu<4;nu+=1){
+            averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
         }
     }
     fprintf(stream, "%f\t%f\n", averageplaquette/(4.0*latticesites), accept/(1.0*latticesites));
     return averageplaquette/(4.0*latticesites);
 }
 
+
+
 int main(int argc, char **argv){
-    double beta=1.01;
+    double beta=1.4;
     double deltatau=1;   
     int Ns=8;       //number of sites for the spatial directions
     int Nt=8;       //number of sites for the temporal directions
     int latticesites=Nt*Ns*Ns*Ns*4;
-    double measurements=5000;
+    double measurements=15000;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
     int neighbour[8];
@@ -193,7 +250,7 @@ int main(int argc, char **argv){
     
     //save acceptance rate and average plaquette for plotting
     char filename[100];
-    sprintf(filename, "measbeta%.1fNt%dNs%d.txt", beta, Nt, Ns);
+    sprintf(filename, "measbeta%.1fNt%dNs%drandom.txt", beta, Nt, Ns);
     FILE * stream=fopen(filename, "w+");
     
     double averageplaquette=0;
@@ -215,7 +272,7 @@ int main(int argc, char **argv){
         gsl_vector_set(plaq, i, sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta));
     }
     
-    printf("%f\t%f\t%d\t%d\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements));
+    printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
     
     /**neighbours: need two neighbours for every direction, one forward and one backward
 	 * 0: t-forward     4: t-backward
