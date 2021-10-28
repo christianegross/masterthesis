@@ -21,8 +21,9 @@ set ylabel '<P>'
 set xlabel 'beta'
 set key bottom right
 
-set yrange [0.95:1]
-plot 'meascombined.txt' u 1:5 ls 1 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
+#set yrange [0.2:1]
+set xrange[0.5:30]
+plot 'meascombined.txt' u 1:(1-(2*$5)):6 w yerrorbars ls 1 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
 unset title
 
 set out "meas.pdf"

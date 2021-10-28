@@ -178,9 +178,10 @@ double deltas(double *lattice, int *neighbour, int position, double beta, double
  * value of the average plaquette is returned, average plaquette and acceptane rate are printed out for plotting
  * can switch between ordered sweep through the lattice and random choosing of latticesites points per sweep
  * **/
+ //sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta);
 double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, FILE * stream, int Nt, int Ns, double delta){
     double change;  
-    int neighbour[8], accept=0, averageplaquette=0, latticesites=Ns*Ns*Ns*Nt*4;  
+    int neighbour[8], accept=0, latticesites=Ns*Ns*Ns*Nt*4;  
     /**neighbours: need two neighbours for every direction, one forward and one backward
 	 * 0: t-forward     4: t-backward
 	 * 1: x-forward     5: x-backward
@@ -223,9 +224,9 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
                         lattice[position+mu]+=change;
                         accept+=1;
                         }
-                        for (int nu=mu+1;nu<4;nu+=1){if(nu!=mu){
-                            averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
-                        }}
+                        //~ for (int nu=mu+1;nu<4;nu+=1){if(nu!=mu){
+                            //~ averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
+                        //~ }}
                     }
                 }
             }
@@ -250,8 +251,17 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
         //~ }}
     //~ }
     //calculate 1-plaquette because that is definition of plaquette in weak coupling paper
-    fprintf(stream, "%f\t%f\n", 1.0-averageplaquette/(1.5*latticesites), accept/(1.0*latticesites));
-    return 1.0-averageplaquette/(1.5*latticesites);
+    double averageplaquette=0;
+    for (int i=0;i<latticesites;i+=4){
+        get_neighbours(neighbour, i, Nt, Ns);
+        for(int mu=0;mu<4;mu+=1){
+            for(int nu=mu+1;nu<4;nu+=1){
+                averageplaquette+=plaquette(lattice, neighbour, i, mu, nu);
+            }
+        }
+    }
+    fprintf(stream, "%f\t%f\n", averageplaquette/(1.5*latticesites), accept/(1.0*latticesites));
+    return averageplaquette/(1.5*latticesites);
 }
 
 void smear(double * lattice, int * neighbour, int Nt,  int Ns, double alpha){
@@ -279,7 +289,6 @@ void smear(double * lattice, int * neighbour, int Nt,  int Ns, double alpha){
             //~ printf("%f\t", gsl_complex_arg(oneloop));
             //store in intermediate lattice so smearing of further links is not affected by smearing already done
             helplattice[pos+mu]=gsl_complex_arg(oneloop);
-            //~ lattice[pos+mu]=gsl_complex_arg(oneloop);
         }
     }
     //copy results into lattice
@@ -288,19 +297,66 @@ void smear(double * lattice, int * neighbour, int Nt,  int Ns, double alpha){
     }
 }
 
+/**calculates the loop forward direction[0]*t+direction[1]*x+direction[2]*y+direction[3]*z
+ * backward direction[0]*t+direction[1]*x+direction[2]*y+direction[3]*z
+ * first extracts coordinates, then goes forward, then backward, returns Re(Product(U))
+ * uses explicit periodic boundary conditions
+ * **/
+double wilson(double * lattice, int * neighbour, int Nt, int Ns, int pos, int *direction){
+    double value=0;
+    int position[4]; //store t, x, y, z;
+    int helppos=pos;
+    //extract positions
+    position[3]=(helppos%(4*Ns))/4;
+    helppos-=4*position[3];
+    position[2]=(helppos%(4*Ns*Ns))/(4*Ns);
+    helppos-=4*Ns*position[2];
+    position[1]=(helppos%(4*Ns*Ns*Ns))/(4*Ns*Ns);
+    helppos-=4*Ns*Ns*position[1];
+    position[0]=(helppos%(4*Ns*Ns*Ns*Nt))/(4*Ns*Ns*Ns);
+    //forward
+    for(int i=0;i<direction[0];i+=1){
+        value+=lattice[((position[0]+i)%Nt)*4*Ns*Ns*Ns+position[1]*4*Ns*Ns+position[2]*4*Ns+position[3]*4];
+    }
+    for(int i=0;i<direction[1];i+=1){
+        value+=lattice[((position[0]+direction[0])%Nt)*4*Ns*Ns*Ns+((position[1]+i)%Ns)*4*Ns*Ns+position[2]*4*Ns+position[3]*4+1];
+    }
+    for(int i=0;i<direction[2];i+=1){
+        value+=lattice[((position[0]+direction[0])%Nt)*4*Ns*Ns*Ns+((position[1]+direction[1])%Ns)*4*Ns*Ns+((position[2]+i)%Ns)*4*Ns+position[3]*4+2];
+    }
+    for(int i=0;i<direction[3];i+=1){
+        value+=lattice[((position[0]+direction[0])%Nt)*4*Ns*Ns*Ns+((position[1]+direction[1])%Ns)*4*Ns*Ns+((position[2]+direction[2])%Ns)*4*Ns+((position[3]+i)%Ns)*4+3];
+    }
+    //back
+    for(int i=0;i<direction[0];i+=1){
+        value-=lattice[((position[0]+direction[0]-i-1)%Nt)*4*Ns*Ns*Ns+((position[1]+direction[1])%Ns)*4*Ns*Ns+((position[2]+direction[2])%Ns)*4*Ns+((position[3]+direction[3])%Ns)*4];
+    }
+    for(int i=0;i<direction[1];i+=1){
+        value-=lattice[position[0]*4*Ns*Ns*Ns+((position[1]+direction[1]-1-i)%Ns)*4*Ns*Ns+((position[2]+direction[2])%Ns)*4*Ns+((position[3]+direction[3])%Ns)*4+1];
+    }
+    for(int i=0;i<direction[2];i+=1){
+        value-=lattice[position[0]*4*Ns*Ns*Ns+position[1]*4*Ns*Ns+((position[2]+direction[2]-1-i)%Ns)*4*Ns+((position[3]+direction[3])%Ns)*4+2];
+    }
+    for(int i=0;i<direction[3];i+=1){
+        value-=lattice[position[0]*4*Ns*Ns*Ns+position[1]*4*Ns*Ns+position[2]*4*Ns+((position[3]+direction[3]-i-1)%Ns)*4+3];
+    }
+    return cos(value);
+}
+
 int main(int argc, char **argv){
     double beta=2.0;
     double deltatau=1;   
-    int Ns=16;       //number of sites for the spatial directions
+    int Ns=8;       //number of sites for the spatial directions
     int Nt=Ns;       //number of sites for the temporal directions
     int latticesites=Nt*Ns*Ns*Ns*4;
     //~ printf("%d\n", latticesites);
-    int thermalizations=10;
-    int measurements=10;
+    int thermalizations=200;
+    int measurements=1000;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
     double potential[latticesites/4];//test for gauge invariance
     int neighbour[8];
+    int direction[4];
     //~ printf("%d\n", latticesites);
     
     gsl_rng *generator;
@@ -313,7 +369,7 @@ int main(int argc, char **argv){
     sprintf(filename, "measbeta%.1fNt%dNs%drandom.txt", beta, Nt, Ns);
     FILE * stream=fopen(filename, "w+");
     
-    double averageplaquette=0;
+    double averageplaquette=0, wilsonplaquette=0;
     double averagelattice=0;
     int plaquettes=0;
     //~ int accept=0;
@@ -327,9 +383,9 @@ int main(int argc, char **argv){
     }
 
   
-    //~ double betaarray[16]={0.2,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,4.0,5.0, 10.0, 20.0, 30.0, 40.0, 50.0};
-    //~ for(int j=11;j<16;j+=1){  
-        //~ beta=betaarray[j]; 
+    double betaarray[16]={0.2,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,4.0,5.0, 10.0, 20.0, 30.0, 40.0, 50.0};
+    for(int j=0;j<16;j+=1){  
+        beta=betaarray[j]; 
     for(int i=0; i<thermalizations;i+=1){
         sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta);
     }
@@ -340,7 +396,7 @@ int main(int argc, char **argv){
     
     printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
 
-    //~ }
+    }
     for (int i=0;i<latticesites;i+=10){
         //~ printf("%.3f\t", lattice[i]);
     }
@@ -354,20 +410,47 @@ int main(int argc, char **argv){
                 for (int z=0;z<Ns;z+=1){
                     position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
                     get_neighbours(neighbour, position, Nt, Ns);
+                    direction[0]=1;direction[1]=1;direction[2]=0;direction[3]=0; //1100
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 0,1)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
+                    direction[1]=0;direction[2]=1; //1010
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 0,2)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
+                    direction[2]=0;direction[3]=1; //1001
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 0,3)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
+                    direction[0]=0;direction[1]=1; //0101
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 1,3)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
+                    direction[3]=0;direction[2]=1; //0110
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 1,2)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
+                    direction[1]=0;direction[3]=1; //0011
+                    wilsonplaquette+=wilson(lattice, neighbour, Nt, Ns, position, direction);
+                    //~ printf("%f\t%d %d %d %d\n", wilson(lattice, neighbour, Nt, Ns, position, direction)+plaquette(lattice, neighbour, position, 2,3)-1, direction[0], direction[1], direction[2], direction[3]);
+                    
                     for (int mu=0;mu<4;mu+=1){
                         averagelattice+=lattice[position+mu];
                         for (int nu=0;nu<4;nu+=1){if(nu!=mu){
+                            //~ printf("%d%d\t", mu, nu);
                             averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
                             plaquettes+=1;
                         }}
                     }
+                    //~ printf("\n");
                 }
             }
         }
     }
     averageplaquette/=latticesites*3;
-    printf("<P>\t<U>\tplaquettes hit\tS\n");
-    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns));
+    //~ printf("<P>\t<U>\tplaquettes hit\tS\n");
+    //~ printf("%f\n", 1-wilsonplaquette/(1.5*latticesites));
+    //~ printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns));
     //add changes to check for gauge invariance
     for(int j=0;j<20;j+=1){
     for (int i=0; i<latticesites/4; i+=1){
@@ -410,7 +493,33 @@ int main(int argc, char **argv){
         }
     }
     averageplaquette/=latticesites*3;
-    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns)); 
+    //~ printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns)); 
+    }
+    for (int i=0; i<30;i+=1){
+        //~ printf("%f\n", sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta));
+        averageplaquette=0;
+        plaquettes=0;
+        averagelattice=0;
+        for (int t=0;t<Nt;t+=1){
+             for (int x=0;x<Ns;x+=1){
+                for (int y=0;y<Ns;y+=1){
+                    for (int z=0;z<Ns;z+=1){
+                        position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
+                        get_neighbours(neighbour, position, Nt, Ns);
+                        for (int mu=0;mu<4;mu+=1){
+                            averagelattice+=lattice[position+mu];
+                            for (int nu=0;nu<4;nu+=1){if(nu!=mu){
+                                averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
+                                plaquettes+=1;
+                            }}
+                        }
+                    }
+                }
+            }
+        }
+        averageplaquette/=latticesites*3;
+        //~ printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns)); 
+    
     }
     smear(lattice, neighbour, Nt, Ns, 0.7);
     printf("%f\n", action(lattice, beta, deltatau, neighbour, Nt, Ns));
