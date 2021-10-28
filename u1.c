@@ -42,7 +42,19 @@ void get_neighbours(int *neighbour, int position, int Nt, int Ns){
     neighbour[6]=(y==0)     ?(Ns-1)*Ns*4        :-Ns*4      ;
     neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4          :4          ;
     neighbour[7]=(z==0)     ?(Ns-1)*4           :-4         ;
-}
+}    
+    /**neighbours: need two neighbours for every direction, one forward and one backward
+	 * 0: t-forward     4: t-backward
+	 * 1: x-forward     5: x-backward
+	 * 2: y-forward     6: y-backward
+	 * 3: z-forward     7: z-backward
+     * forward mu, backward 4+mu
+	 * relative to position
+	 * mu			0	1	2	3
+	 * direction	t	x	y	z
+     * implement periodic boundary conditions
+	 * **/
+
 
 //simple mean of a vector
 double mean(gsl_vector *vector, int length){
@@ -183,8 +195,8 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
     /**
      * go through the entire lattice, calculate average plaquette
      * **/ 
-    int position, mu;
-    double old, new;
+    int position;//, mu;
+    //~ double old, new;
     for (int t=0;t<Nt;t+=1){
          neighbour[0]=(t==Nt-1) ?-(Nt-1)*Ns*Ns*Ns*4:Ns*Ns*Ns*4;
          neighbour[4]=(t==0)    ?(Nt-1)*Ns*Ns*Ns*4:-Ns*Ns*Ns*4;
@@ -252,9 +264,10 @@ int main(int argc, char **argv){
     int latticesites=Nt*Ns*Ns*Ns*4;
     //~ printf("%d\n", latticesites);
     int thermalizations=100;
-    int measurements=1000;
+    int measurements=100;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
+    double potential[latticesites/4];//test for gauge invariance
     int neighbour[8];
     //~ printf("%d\n", latticesites);
     
@@ -282,9 +295,9 @@ int main(int argc, char **argv){
     }
 
   
-    double betaarray[16]={0.2,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,4.0,5.0, 10.0, 20.0, 30.0, 40.0, 50.0};
-    for(int j=11;j<16;j+=1){  
-        beta=betaarray[j]; 
+    //~ double betaarray[16]={0.2,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,4.0,5.0, 10.0, 20.0, 30.0, 40.0, 50.0};
+    //~ for(int j=11;j<16;j+=1){  
+        //~ beta=betaarray[j]; 
     for(int i=0; i<thermalizations;i+=1){
         sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta);
     }
@@ -294,45 +307,22 @@ int main(int argc, char **argv){
     }
     
     printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
-    }
+
+    //~ }
     for (int i=0;i<latticesites;i+=10){
         //~ printf("%.3f\t", lattice[i]);
     }
-        /**neighbours: need two neighbours for every direction, one forward and one backward
-	 * 0: t-forward     4: t-backward
-	 * 1: x-forward     5: x-backward
-	 * 2: y-forward     6: y-backward
-	 * 3: z-forward     7: z-backward
-     * forward mu, backward 4+mu
-	 * relative to position
-	 * mu			0	1	2	3
-	 * direction	t	x	y	z
-     * implement periodic boundary conditions
-	 * **/
     /**
      * go through the entire lattice, calculate average plaquette
      * **/ 
     int position;
     for (int t=0;t<Nt;t+=1){
-         neighbour[0]=(t==Nt-1) ?-(Nt-1)*Ns*Ns*Ns*4:Ns*Ns*Ns*4;
-         neighbour[4]=(t==0)    ?(Nt-1)*Ns*Ns*Ns*4:-Ns*Ns*Ns*4;
          for (int x=0;x<Ns;x+=1){
-            neighbour[1]=(x==Ns-1)  ?-(Ns-1)*Ns*Ns*4:Ns*Ns*4;
-            neighbour[5]=(x==0)     ?(Ns-1)*Ns*Ns*4:-Ns*Ns*4;
             for (int y=0;y<Ns;y+=1){
-                neighbour[2]=(y==Ns-1)  ?-(Ns-1)*Ns*4:Ns*4;
-                neighbour[6]=(y==0)     ?(Ns-1)*Ns*4:-Ns*4;
                 for (int z=0;z<Ns;z+=1){
-                    neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4:4;
-                    neighbour[7]=(z==0)     ?(Ns-1)*4:-4;
                     position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
+                    get_neighbours(neighbour, position, Nt, Ns);
                     for (int mu=0;mu<4;mu+=1){
-                        //~ change=gsl_ran_flat(generator, -delta, delta);
-                        //~ if(exp(deltas(lattice, neighbour, position, beta, deltatau, mu, change))>gsl_rng_uniform(generator)){
-                        //lattice[position+mu]=gsl_complex_mul(lattice[position+mu], gsl_complex_polar(1,change));
-                        //~ lattice[position+mu]+=change;
-                        //~ accept+=1;
-                        //~ }
                         averagelattice+=lattice[position+mu];
                         for (int nu=0;nu<4;nu+=1){if(nu!=mu){
                             averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
@@ -343,9 +333,53 @@ int main(int argc, char **argv){
             }
         }
     }
-    
     averageplaquette/=latticesites*3;
-    printf("%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites));
+    printf("<P>\t<U>\tplaquettes hit\tS\n");
+    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Ns, Nt));
+    //add changes to check for gauge invariance
+    for(int j=0;j<20;j+=1){
+    for (int i=0; i<latticesites/4; i+=1){
+        potential[i]=2*M_PI*gsl_rng_uniform(generator)-M_PI;
+    }
+    for (int t=0;t<Nt;t+=1){
+         for (int x=0;x<Ns;x+=1){
+            for (int y=0;y<Ns;y+=1){
+                for (int z=0;z<Ns;z+=1){
+                    position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
+                    get_neighbours(neighbour, position, Nt, Ns);
+                    for (int mu=0;mu<4;mu+=1){
+                        //U_mu(x)->V^dagger(x)U_mu(x)
+                        lattice[position+mu]-=potential[position/4];
+                        //U_mu(x-mu)->U_mu(x-mu)V(x)
+                        lattice[position+neighbour[4+mu]+mu]+=potential[position/4];
+                    }
+                }
+            }
+        }
+    }
+    averageplaquette=0;
+    plaquettes=0;
+    averagelattice=0;
+    for (int t=0;t<Nt;t+=1){
+         for (int x=0;x<Ns;x+=1){
+            for (int y=0;y<Ns;y+=1){
+                for (int z=0;z<Ns;z+=1){
+                    position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
+                    get_neighbours(neighbour, position, Nt, Ns);
+                    for (int mu=0;mu<4;mu+=1){
+                        averagelattice+=lattice[position+mu];
+                        for (int nu=0;nu<4;nu+=1){if(nu!=mu){
+                            averageplaquette+=plaquette(lattice, neighbour, position, mu, nu);
+                            plaquettes+=1;
+                        }}
+                    }
+                }
+            }
+        }
+    }
+    averageplaquette/=latticesites*3;
+    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Ns, Nt)); 
+    }
     gsl_rng_free(generator);
     fclose(stream);
     gsl_vector_free(plaq);
