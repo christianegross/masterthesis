@@ -11,7 +11,7 @@ file3='measbeta5.0Nt8Ns8random.txt'
 
 d=4
 weakcoupling(x)=1.0-1.0/(4.0*x)-1.0/(32.0*x**2)-0.0131/x**3-0.00752/x**4
-F(x)=(x<1.5)*d*(d-1)*(x**2/8.0)#-x**4/128.0+(d/192.0-11.0/1152.0)*x**6+(757.0/98304.0-d/256.0)*x**8*(d*d/512.0-85.0/12288.0*d+2473.0/409600.0)*x**10+(2467.0*d/262144.0-29*d*d/12288.0-1992533.0/212336640.0)*x**12+(5.0*d**3/4096.0-237.0*d**2/32768.0+178003.0*d/11796480.0-38197099.0/3468165120.0)*x**14+(-15/8192.0*d**3+1485.0/131072.0*d*d-53956913.0*d/2264924160.0+11483169709.0/676457349120.0)*x**16)
+F(x)=d*(d-1)*(x**2/8.0-x**4/128.0+(d/192.0-11.0/1152.0)*x**6+(757.0/98304.0-d/256.0)*x**8*(d*d/512.0-85.0/12288.0*d+2473.0/409600.0)*x**10+(2467.0*d/262144.0-29*d*d/12288.0-1992533.0/212336640.0)*x**12+(5.0*d**3/4096.0-237.0*d**2/32768.0+178003.0*d/11796480.0-38197099.0/3468165120.0)*x**14+(-15/8192.0*d**3+1485.0/131072.0*d*d-53956913.0*d/2264924160.0+11483169709.0/676457349120.0)*x**16)
 #*d*(d-1)
 
 set out 'averageplaquette.pdf'
@@ -21,9 +21,12 @@ set ylabel '<P>'
 set xlabel 'beta'
 set key bottom right
 
-#set yrange [0.2:1]
-set xrange[0.5:30]
-plot 'meascombined.txt' u 1:(1-(2*$5)):6 w yerrorbars ls 1 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
+set yrange [0:1]
+set xrange[0.05:3]
+plot 'meascombined.txt' u 1:(1-$5):6 w yerrorbars ls 1 ps 0.2 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
+set xrange[3:100]
+unset yrange
+plot 'meascombined.txt' u 1:(1-$5):6 w yerrorbars ls 1 ps 0.2 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
 unset title
 
 set out "meas.pdf"
