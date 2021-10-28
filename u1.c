@@ -254,17 +254,49 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
     return 1.0-averageplaquette/(1.5*latticesites);
 }
 
-
+void smear(double * lattice, int * neighbour, int Nt,  int Ns, double alpha){
+    double helplattice[4*Nt*Ns*Ns*Ns];
+    gsl_complex oneloop; 
+    for (int pos=0;pos<4*Nt*Ns*Ns*Ns;pos+=4){
+        get_neighbours(neighbour, pos, Nt, Ns);
+        //if all links should be smeared: start mu at 0, only spatial: start at 1
+        //also save current state of temporal links
+        helplattice[pos]=lattice[pos];
+        for(int mu=1;mu<4;mu+=1){
+            oneloop=gsl_complex_rect(0,0); 
+            //calculate "staples"
+            //question: include timelike staples(nu=0 permitted) or not?
+            for(int nu=1;nu<4;nu+=1){if(mu!=nu){
+                oneloop=gsl_complex_add(oneloop, gsl_complex_polar(1,lattice[pos+nu+neighbour[mu]]-lattice[pos+neighbour[nu]+mu]-lattice[pos+nu]));
+                //orientation of staple important? now: chosen such that addition of link itself would provide closed plaquette
+                oneloop=gsl_complex_add(oneloop, gsl_complex_polar(1,-lattice[pos+neighbour[4+nu]+mu]-lattice[pos+neighbour[4+nu]+neighbour[mu]+nu]+lattice[pos+nu+neighbour[4+nu]]));
+            }}
+            oneloop=gsl_complex_mul_real(oneloop, (1-alpha)/2);
+            //oneloop=(1-alpha)/2 sum(staples), +=alpha U
+            oneloop=gsl_complex_add(oneloop, gsl_complex_mul_real(gsl_complex_polar(1, lattice[pos+mu]), alpha));
+            //project onto U(1) again: oneloop=oneloop/|oneloop|, so new abs value=1
+            oneloop=gsl_complex_mul_real(oneloop, 1.0/gsl_complex_abs(oneloop));
+            //~ printf("%f\t", gsl_complex_arg(oneloop));
+            //store in intermediate lattice so smearing of further links is not affected by smearing already done
+            helplattice[pos+mu]=gsl_complex_arg(oneloop);
+            //~ lattice[pos+mu]=gsl_complex_arg(oneloop);
+        }
+    }
+    //copy results into lattice
+    for (int i=0;i<4*Nt*Ns*Ns*Ns;i+=1){
+        lattice[i]=helplattice[i];
+    }
+}
 
 int main(int argc, char **argv){
     double beta=2.0;
     double deltatau=1;   
-    int Ns=8;       //number of sites for the spatial directions
+    int Ns=16;       //number of sites for the spatial directions
     int Nt=Ns;       //number of sites for the temporal directions
     int latticesites=Nt*Ns*Ns*Ns*4;
     //~ printf("%d\n", latticesites);
-    int thermalizations=100;
-    int measurements=100;
+    int thermalizations=10;
+    int measurements=10;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
     double potential[latticesites/4];//test for gauge invariance
@@ -335,7 +367,7 @@ int main(int argc, char **argv){
     }
     averageplaquette/=latticesites*3;
     printf("<P>\t<U>\tplaquettes hit\tS\n");
-    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Ns, Nt));
+    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns));
     //add changes to check for gauge invariance
     for(int j=0;j<20;j+=1){
     for (int i=0; i<latticesites/4; i+=1){
@@ -378,8 +410,10 @@ int main(int argc, char **argv){
         }
     }
     averageplaquette/=latticesites*3;
-    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Ns, Nt)); 
+    printf("%f\t%f\t%f\t%f\n", averageplaquette, averagelattice/latticesites, plaquettes/(3.0*latticesites), action(lattice, beta, deltatau, neighbour, Nt, Ns)); 
     }
+    smear(lattice, neighbour, Nt, Ns, 0.7);
+    printf("%f\n", action(lattice, beta, deltatau, neighbour, Nt, Ns));
     gsl_rng_free(generator);
     fclose(stream);
     gsl_vector_free(plaq);
