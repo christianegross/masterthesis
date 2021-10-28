@@ -7,7 +7,7 @@ u1.exe: u1.o
 	
 #erstellt aus allen .c dateien eine .o datei	
 %.o: %.c
-	gcc -std=c99 -Wall -pedantic -fopenmp -I /usr/include/ $^ -c 
+	gcc -std=c99 -Wall -pedantic -fopenmp -ggdb3 -I /usr/include/ $^ -c 
 	
 #.PHONY: clean
 
