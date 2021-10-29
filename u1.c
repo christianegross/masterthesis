@@ -16,6 +16,111 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_vector.h>
+#include <gsl/gsl_sf_bessel.h>
+
+//code for binning, bootstrap, autocorrelation from compphys project https://github.com/christianegross/CompPhys_2021/blob/main/Project/src/main/auxiliary.c
+/**
+ * @brief calculates the autocorrelation of measurements
+ */
+void autocorrelation(gsl_vector *measurements, gsl_vector *results, double mean){
+	/**
+	 * make block, calculate gamma with tau=0, write (0,1) to results
+	 * for range of tau: calculate gamma, divide by gamma(0), write (tau, gamma/gamma) to reaults
+	 */
+	double czero=0;
+	double ctime=0;
+	for (int i=0; i<int(measurements->size); i+=1){
+		 czero+=(gsl_vector_get(measurements,i)-mean)*(gsl_vector_get(measurements,i)-mean);
+	}
+	czero/=measurements->size;
+	gsl_vector_set (results, 0,1);
+	for (int time=1; time<int(results->size); time+=1){
+		ctime=0;
+		for (int i=0; i<int(measurements->size-time); i+=1){
+		 ctime+=(gsl_vector_get(measurements,i)-mean)*(gsl_vector_get(measurements,i+time)-mean);
+		}
+		ctime/=(measurements->size-time);
+		gsl_vector_set (results, time, ctime/czero);
+	}
+}
+
+//calculates integrated autocorrelation time for given list of normalized times and window size
+//neglect factor 1/2, negative times because C(tau)=C(-tau)
+double tauint(gsl_vector * autocorrtimes, int W){
+    double result=0.5; //account for Gamma(0)=1
+    for (int i=1;i<W;i++){
+        result+=gsl_vector_get(autocorrtimes, i);
+    }
+    return result;        
+}
+
+
+
+/**
+ * @fn 		inline void binning(gsl_block *measurements, gsl_block *binneddata, int lengthofbin)
+ * @brief 	takes data points in measurements and writes bins over lengthofbin in binneddata
+ */
+extern inline void binning(gsl_vector *measurements, gsl_vector *binneddata, int lengthofbin){
+	double bincontent=0;
+	//assertion if lengths of bins, measurements fit together
+	int numberofbins=measurements->size/lengthofbin;
+	//printf("numberofbins=%d\tnumberofelemtns=%lu\tlengthofbin=%d\n", numberofbins, binneddata->size, lengthofbin);
+	if (numberofbins!=int(binneddata->size)){fprintf(stderr, "Gave wrong lengths! %d number of bins to be calculated, but storage allocated for %lu!", numberofbins, binneddata->size); return;}
+	//calculate content of single bin as arithmetic mean oover lengthofbin datapoints
+	for (int bin=0; bin<numberofbins; bin+=1){
+		bincontent=0;
+		for (int datapoint=0; datapoint<lengthofbin; datapoint+=1){
+			bincontent+=gsl_vector_get(measurements,bin*lengthofbin+datapoint);
+		}
+		gsl_vector_set(binneddata, bin, bincontent/lengthofbin);
+	}
+}
+
+/**
+ * @fn makebootstrapreplica(gsl_block * measurements, gsl_rng * generator)
+ * @brief makes one bootstrapreplica out of the data in measurements
+ * 
+ * @param measurements contains all the measurements which can be used to calculate the replica
+ * @param generator random number generator which determines which elements of measurements are used to calaculate the replica
+ * 
+ * @return replica arithmetic mean of chosen measurements, one bootstrapreplica
+ */
+double makebootstrapreplica(gsl_vector * measurements, gsl_rng * generator){
+	double replica=0;
+	int randomnumber;
+	for (int datapoint=0; datapoint<int(measurements->size); datapoint+=1){
+		randomnumber=gsl_rng_uniform_int(generator, measurements->size);
+		replica+=gsl_vector_get(measurements, randomnumber);
+	}
+	return replica/measurements->size;
+}
+/**
+ * @fn bootstrap(gsl_block *measurements, gsl_rng *generator, int R, double *mean, double *variance)
+ * @brief uses the bootstrapmethod to calculate mean and variance of the data in measurements
+ * 
+ * @param measurements contains all the datappoints which are used
+ * @param generator random number generator which determines which elements of measurements are used to calaculate the replica
+ * @param R number of replicas which are used to calculate mean and variance
+ * @param calculated mean over all replicas
+ * @param variance calculated variance over all replica
+ */ 
+void bootstrap(gsl_vector *measurements, gsl_rng *generator, int R, double *mean, double *variance){
+	*mean=0;
+	*variance=0;
+	gsl_block *replicalist=gsl_block_alloc(R);
+	for (int i=0; i<R; i+=1){
+		replicalist->data[i]=makebootstrapreplica(measurements, generator);
+		*mean+=replicalist->data[i];
+	}
+	//calculate arithmetic mean over replicas
+	*mean/=R;
+	//calculate standard deviation of replicas
+	for (int i=0; i<R; i+=1){
+		*variance+=(*mean-replicalist->data[i])*(*mean-replicalist->data[i]);
+	}
+	*variance/=R-1;
+	gsl_block_free(replicalist);
+	}
 
 /** for a given position in the lattice, determines the single coordinates and determines neighbours with periodic boundary conditions
  * position can also include direction, even if not taken by other functions
@@ -248,7 +353,7 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
     return averageplaquette/(1.5*latticesites);
 }
 
-void smear(double * lattice, int * neighbour, int Nt,  int Ns, double alpha){
+void smear(double * lattice, int * neighbour, const int Nt,  const int Ns, double alpha){
     double helplattice[4*Nt*Ns*Ns*Ns];
     gsl_complex oneloop; 
     for (int pos=0;pos<4*Nt*Ns*Ns*Ns;pos+=4){
@@ -330,36 +435,65 @@ double wilson(double * lattice, int * neighbour, int Nt, int Ns, int pos, int *d
     return cos(value);
 }
 
-int main(int argc, char **argv){
-    double beta=2.0;
-    double deltatau=1;   
-    int Ns=8;       //number of sites for the spatial directions
-    int Nt=Ns;       //number of sites for the temporal directions
+void writeconfig(double * lattice, FILE * file, int Nt, int Ns){
     int latticesites=Nt*Ns*Ns*Ns*4;
+    for(int i=0;i<latticesites;i+=1){
+        fprintf(file, "%f\t", lattice[i]);
+    }
+    fprintf(file, "\n");
+}
+
+void readconfig(double *lattice, FILE * file, int Nt, int Ns){
+    int error;
+    int latticesites=Nt*Ns*Ns*Ns*4;
+    for(int i=0;i<latticesites;i+=1){
+        error=fscanf(file, "%lf\t", &lattice[i]);
+        if(error<0){fprintf(stderr, "Mistake when reading configuration!\n");}
+    }
+    error=fscanf(file, "\n");
+    if(error<0){fprintf(stderr, "Mistake when reading configuration!\n");}
+}
+
+int main(int argc, char **argv){
+    double beta=sqrt(2);
+    double deltatau=1;   
+    const int Ns=10;       //number of sites for the spatial directions
+    const int Nt=Ns;       //number of sites for the temporal directions
+    const int latticesites=Nt*Ns*Ns*Ns*4;
     //~ printf("%d\n", latticesites);
-    int thermalizations=5000;
-    int measurements=5000;
+    int thermalizations=3000;
+    int measurements=3000;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
-    double potential[latticesites/4];//test for gauge invariance
-    int neighbour[8];
-    int direction[4];
+    //~ double potential[latticesites/4];//test for gauge invariance
+    //~ int neighbour[8];
+    //~ int direction[4];
     //~ printf("%d\n", latticesites);
     
     gsl_rng *generator;
 	generator=gsl_rng_alloc(gsl_rng_mt19937);	
     gsl_rng_set(generator, 0);
     double delta=M_PI*0.15;     //change delta to change acceptance rate
+
     
     //save acceptance rate and average plaquette for plotting
-    char filename[100];
-    sprintf(filename, "measbeta%.1fNt%dNs%drandom.txt", beta, Nt, Ns);
-    FILE * stream=fopen(filename, "w+");
+    char measname[100];
+    sprintf(measname, "meas/measbeta%.1fNt%dNs%d.txt", beta, Nt, Ns);
+    FILE * measfile=fopen(measname, "w+");
+    char configsavename[100];
+    sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
+    FILE * configsave; 
     
-    double averageplaquette=0, wilsonplaquette=0;
-    double averagelattice=0;
-    int plaquettes=0;
+    //~ double averageplaquette=0;//, wilsonplaquette=0;
+    //~ double averagelattice=0;
+    //~ int plaquettes=0;
     gsl_vector * plaq=gsl_vector_alloc(measurements);   //stores measured plaquette values to take average
+        
+    double mean_plaquette, var_plaquette, autocorrint;
+	//~ gsl_vector * plaquette=gsl_vector_alloc(numberofmeasurements);
+	gsl_vector * binned_plaquette_mem=gsl_vector_alloc(measurements);
+	gsl_vector_view binned_plaquette;
+	gsl_vector * plaquette_correlation_binned=gsl_vector_alloc(measurements/32); //longer times ain autocorrelation are uninteresting
     
     /** initialize lattice **/
     for (int i=0; i<latticesites; i+=1){
@@ -368,27 +502,88 @@ int main(int argc, char **argv){
     }
 
   
-    double betaarray[21]={0.05,0.1,0.2,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,4.0,5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 66, 87, 100};
-    for(int j=0;j<21;j+=1){  
+    double betaarray[25]={0.05,0.1,0.2,0.3,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5, 10.0, 20.0, 30.0, 40.0, 50.0, 66, 87, 100};
+    //~ double deltatauarray[10]={1, 0.8, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1};
+    for(int j=0;j<17;j+=1){  
         beta=betaarray[j];
-        if (beta<10){thermalizations=1000;measurements=1000;} 
-        if (beta>=10){thermalizations=5000;measurements=5000;} 
+        //~ deltatau=deltatauarray[j];
+        //~ if (beta<10){thermalizations=10;measurements=10;} 
+        //~ if (beta>=10){thermalizations=50;measurements=50;} 
+        sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
+        configsave=fopen(configsavename, "w+");
     for(int i=0; i<thermalizations;i+=1){
-        sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta);
+        sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta);
     }
-    for(int i=0; i<measurements;i+=1){
-        gsl_vector_set(plaq, i, sweep(lattice, beta, deltatau, generator, stream, Nt, Ns,  delta));
+    for(int i=0; i<measurements;i+=1){     
+        gsl_vector_set(plaq, i, sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta));
+        if(i%200==0){
+        writeconfig(lattice, configsave, Nt, Ns);}
+    }
+    fclose(configsave);
+    
+    //~ printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
+
+    for (int binsize=2;binsize<33;binsize*=2){
+		binned_plaquette=gsl_vector_subvector(binned_plaquette_mem, 0, plaq->size/binsize);
+		binning(plaq, &binned_plaquette.vector, binsize);
+		bootstrap(&binned_plaquette.vector, generator, 200, &mean_plaquette, &var_plaquette);
+		autocorrelation(&binned_plaquette.vector, plaquette_correlation_binned, mean_plaquette);
+        autocorrint=tauint(plaquette_correlation_binned, 10);
+		
+		//~ fprintf(plaquette_data, "\nbinsize %d\n", binsize);
+		//~ fprintf(plaquette_autocorrelation, "\nbinsize %d\n", binsize);
+		//~ gsl_vector_fprintf(plaquette_data, &binned_plaquette.vector, "%f");
+		//~ gsl_vector_fprintf(plaquette_autocorrelation, plaquette_correlation_binned, "%f");
+		
+		
+		fprintf(stdout, "%f\t%f\t%.2d\t%.2d\t%.2d\t%e\t%e\t%e\n", beta, deltatau, Nt, Ns, binsize, mean_plaquette, var_plaquette, autocorrint);
+    }
     }
     
-    printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
 
-    }
-
-
-    averageplaquette/=latticesites*3;
+		
+    
+    sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
+    //~ configsave=fopen(configsavename, "w+");
+    //~ for(int i=0; i<thermalizations;i+=1){
+        //~ sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta);
+    //~ }
+    //~ for(int i=0; i<measurements;i+=1){     
+        //~ gsl_vector_set(plaq, i, sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta));
+        //~ writeconfig(lattice, configsave, Nt, Ns);
+    //~ }
+    //~ fclose(configsave);
+    
+    //~ printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
+    
+    //~ configsave=fopen(configsavename, "r+");
+    //~ rewind(configsave);
+    //~ for(int i=0; i<measurements;i+=1){ 
+        //~ averageplaquette=0;
+        //~ readconfig(lattice, configsave, Nt, Ns); 
+        //~ for (int i=0;i<latticesites;i+=4){
+        //~ get_neighbours(neighbour, i, Nt, Ns);
+        //~ for(int mu=0;mu<4;mu+=1){
+            //~ for(int nu=mu+1;nu<4;nu+=1){
+                //~ averageplaquette+=plaquette(lattice, neighbour, i, mu, nu);
+            //~ }
+        //~ }
+    //~ } 
+    //~ averageplaquette/=latticesites*1.5;  
+    //~ gsl_vector_set(plaq, i, averageplaquette);
+    //~ }
+    //~ fclose(configsave);
+    //~ printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
+    
+    double temporalmodification=gsl_sf_bessel_I1(1)/gsl_sf_bessel_I0(1);
+    printf("%f\n", temporalmodification);    
+        
     gsl_rng_free(generator);
-    fclose(stream);
+    fclose(measfile);
+    //~ fclose(configsave);
     gsl_vector_free(plaq);
+    gsl_vector_free(binned_plaquette_mem);
+    gsl_vector_free(plaquette_correlation_binned);
 	return 0;
 }
 
