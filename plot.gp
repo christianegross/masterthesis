@@ -4,10 +4,8 @@ set samples 1000
 set style line 1 lc 7 pt 7 
 set style line 2 lc 2 pt 6 
 set style line 3 lc 3 pt 5
+set style line 4 lc 4 pt 4
 
-file='meas/measbeta1.0Nt16Ns16cnum.txt'
-file2='meas/measbeta1.0Nt16Ns16.txt'
-file3='meas/measbeta5.0Nt8Ns8random.txt'
 
 d=4
 weakcoupling(x)=1.0-1.0/(4.0*x)-1.0/(32.0*x**2)-0.0131/x**3-0.00752/x**4
@@ -16,47 +14,47 @@ Pstrong(x)=2*(x/4-4*x**3/128.0+(d/192.0-11.0/1152.0)*6*x**5+(757.0/98304.0-d/256
 #*d*(d-1)
 
 set out 'averageplaquette.pdf'
+binsize=64
 
-set title 'Delta tau=1, N_s=N_t=8'
+set title 'Delta tau=1, N_s=N_t=10, binsize='.binsize
 set ylabel '<1-P>'
 set xlabel 'beta'
 set key bottom right
 
 set yrange [0:1]
-set xrange[0:5.05]
-plot 'meascombined.txt' u 1:(1-$5):6 w yerrorbars ls 1 ps 0.2 title 'measured', weakcoupling(x) ls 2 title 'weak', Pstrong(x) ls 3 title '2*dF/dbeta*1/(d*(d-1))'
+set xrange[0:6]
+plot 'measplaquette.txt' u ($5==0?$1:1/0):(1-$6):7 w yerrorbars ls 1 ps 0.2 title 'naive error',\
+'measplaquette.txt' u ($5==binsize?$1:1/0):(1-$6):7 w yerrorbars ls 4 ps 0.2 title 'binned',\
+ weakcoupling(x) ls 2 title 'weak', Pstrong(x) ls 3 title '2*dF/dbeta*1/(d*(d-1))'
+ 
+ 
 set xrange[3:100]
 unset yrange
 #plot 'meascombined.txt' u 1:(1-$5):6 w yerrorbars ls 1 ps 0.2 title 'measured', weakcoupling(x) ls 2 title 'weak'#, F(x) ls 3 title 'strong'
+unset xrange 
+set logscale x
+set xlabel 'binsize'
+set ylabel 'std(P)'
+plot 'measplaquette.txt' u 5:7 ls 1 title ''
+unset logscale x
 
 set title 'beta=sqrt(2), N_s=N_t=8'
 #set ylabel '<P>'
 set xrange [0.05:1.05]
 set yrange [0.1:0.3]
 set xlabel 'Delta tau'
-plot 'plaquettedeltatau.txt' u 2:5:6 w yerrorbars ls 1 ps 0.2 title 'plaquette'
+#plot 'plaquettedeltatau.txt' u 2:5:6 w yerrorbars ls 1 ps 0.2 title 'plaquette'
 
 unset title
 
 set out "meas.pdf"
 unset xrange
-unset yrange
-
-#set yrange [0.7:0.75]
-
-plot 'meas/measbeta1.4Nt8Ns8ordered.txt' u 0:1 ls 1 w lines title 'ordered', 'meas/measbeta1.4Nt8Ns8random.txt' u 0:1 ls 2 w lines title 'random'
-
 set yrange [0:1]
+set xlabel 'step'
+set ylabel '<1-P>'
 
-set xlabel 'configuration'
-set ylabel ''
-
-plot file u 0:1 ls 1 w lines title 'plaquette', file u 0:2 ls 2 w lines title 'acceptance rate'
-plot file2 u 0:1 ls 1 w lines title 'plaquette', file2 u 0:2 ls 2 w lines title 'acceptance rate'
-plot file3 u 0:1 ls 1 w lines title 'plaquette', file3 u 0:2 ls 2 w lines title 'acceptance rate'
-
-
-set yrange [0.645:0.65]
-plot file u 0:1 ls 2 ps 0.3 title '', file2 u 0:1 ls 1 ps 0.1 title ''
+plot 'meas/thermbeta5.500000Nt10Ns10.txt' u 0:(1-$1) ls 1 w lines title 'beta=5.5', 'meas/measbeta5.500000Nt10Ns10.txt' u ($0+5000):(1-$1) ls 2 w lines title 'beta=5.5'
+plot 'meas/thermbeta0.400000Nt10Ns10.txt' u 0:(1-$1) ls 1 w lines title 'beta=0.4', 'meas/measbeta0.400000Nt10Ns10.txt' u ($0+5000):(1-$1) ls 2 w lines title 'beta=0.4'
+plot 'meas/thermbeta0.050000Nt10Ns10.txt' u 0:(1-$1) ls 1 w lines title 'beta=0.05', 'meas/measbeta0.050000Nt10Ns10.txt' u ($0+5000):(1-$1) ls 2 w lines title 'beta=0.05'
 
 set out

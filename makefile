@@ -2,12 +2,12 @@
 LIBS:= -lgsl -lgslcblas -lm -fopenmp -lrt
 
 u1.exe: u1.o
-	g++ -std=c99 -Wall -pedantic -o $@ $^ $(LIBS)
+	g++ -Wall -pedantic -o $@ $^ $(LIBS)
 
 	
 #erstellt aus allen .c dateien eine .o datei	
 %.o: %.c
-	g++ -std=c99 -Wall -pedantic -fopenmp -ggdb3 -I /usr/include/ $^ -c 
+	g++ -Wall -pedantic -fopenmp -ggdb3 -I /usr/include/ $^ -c 
 	
 #.PHONY: clean
 
