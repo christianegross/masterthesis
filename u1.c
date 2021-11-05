@@ -174,9 +174,9 @@ double mean(gsl_vector *vector, int length){
 double deviation(gsl_vector *vector, int length, double mean){
     double var=0;
     for (int i=0; i<length; i+=1){
-        var+=pow(gsl_vector_get(vector, i)-mean, 2);
+        var+=(gsl_vector_get(vector, i)-mean)*(gsl_vector_get(vector, i)-mean);
     }
-    return sqrt(var/length);
+    return var/(length-1);
 }
 
 /**
@@ -327,7 +327,7 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
                     neighbour[3]=(z==Ns-1)  ?-(Ns-1)*4:4;
                     neighbour[7]=(z==0)     ?(Ns-1)*4:-4;
                     position=Ns*Ns*Ns*4*t+Ns*Ns*4*x+Ns*4*y+4*z;
-                    get_neighbours(neighbour, position, Nt, Ns);
+                    //~ get_neighbours(neighbour, position, Nt, Ns);
                     for (int mu=0;mu<4;mu+=1){
                         change=gsl_ran_flat(generator, -delta, delta);
                         if(exp(deltas(lattice, neighbour, position, beta, deltatau, mu, change))>gsl_rng_uniform(generator)){
@@ -353,17 +353,17 @@ double sweep(double *lattice, double beta, double deltatau, gsl_rng *generator, 
             //~ accept+=1;
         //~ }
     //~ }
-    double averageplaquette=0;
-    for (int i=0;i<latticesites;i+=4){
-        get_neighbours(neighbour, i, Nt, Ns);
-        for(int mu=0;mu<4;mu+=1){
-            for(int nu=mu+1;nu<4;nu+=1){
-                averageplaquette+=plaquette(lattice, neighbour, i, mu, nu);
-            }
-        }
-    }
+    //~ double averageplaquette=0;
+    //~ for (int i=0;i<latticesites;i+=4){
+        //~ get_neighbours(neighbour, i, Nt, Ns);
+        //~ for(int mu=0;mu<4;mu+=1){
+            //~ for(int nu=mu+1;nu<4;nu+=1){
+                //~ averageplaquette+=plaquette(lattice, neighbour, i, mu, nu);
+            //~ }
+        //~ }
+    //~ }
     //fprintf(stream, "%f\t%f\n", averageplaquette/(1.5*latticesites), accept/(1.0*latticesites));
-    return averageplaquette/(1.5*latticesites);
+    return accept/double(latticesites);
 }
 
 void smear(double * lattice, int * neighbour, const int Nt,  const int Ns, double alpha){
@@ -497,13 +497,13 @@ void gaugeinvariance(double *lattice, gsl_rng *generator, int Nt, int Ns){
 
 int main(int argc, char **argv){
     int measure=0;
-    double beta=sqrt(2);
+    double beta;
     double deltatau=1;   
     const int Ns=10;       //number of sites for the spatial directions
     const int Nt=Ns;       //number of sites for the temporal directions
     const int latticesites=Nt*Ns*Ns*Ns*4;
     //~ printf("%d\n", latticesites);
-    int thermalizations=5000;
+    int thermalizations=0;
     int measurements=5000;
     double lattice[latticesites];
     //~ gsl_complex lattice[latticesites];
@@ -515,18 +515,18 @@ int main(int argc, char **argv){
     gsl_rng *generator;
 	generator=gsl_rng_alloc(gsl_rng_mt19937);	
     gsl_rng_set(generator, 0);
-    double delta=M_PI*0.15;     //change delta to change acceptance rate
-
+    double delta=0.3;//M_PI*0.15;     //change delta to change acceptance rate
+    double accept;
     
-    //save acceptance rate and average plaquette for plotting
+    //save average plaquette for plotting
     char measname[100];
-    sprintf(measname, "meas/measbeta%.1fNt%dNs%d.txt", beta, Nt, Ns);
+    //~ sprintf(measname, "meas/measbeta%.1fNt%dNs%dmeas%d.txt", beta, Nt, Ns, measurements);
     FILE * measfile;
     char thermname[100];
-    sprintf(thermname, "meas/measbeta%.1fNt%dNs%d.txt", beta, Nt, Ns);
+    //~ sprintf(thermname, "meas/thermbeta%.1fNt%dNs%dtherm%d.txt", beta, Nt, Ns, thermalizations);
     FILE * thermfile;
     char configsavename[100];
-    sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
+    //~ sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
     FILE * configsave; 
     
     //~ double averageplaquette=0;//, wilsonplaquette=0;
@@ -544,51 +544,64 @@ int main(int argc, char **argv){
     /** initialize lattice **/
     for (int i=0; i<latticesites; i+=1){
         //~ lattice[i]=gsl_complex_polar(1,i);
-        lattice[i]=2*M_PI*gsl_rng_uniform(generator)-M_PI;
+        lattice[i]=0;//2*M_PI*gsl_rng_uniform(generator)-M_PI;
     }
 
   
-    double betaarray[25]={0.05,0.1,0.2,0.3,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5, 10.0, 20.0, 30.0, 40.0, 50.0, 66, 87, 100};
+    double betaarray[22]={0.05,0.1,0.2,0.3,0.4,0.6,0.8,1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5, 1.2, 1.4, 1.6, 1.8, 2.1};
     //~ double deltatauarray[10]={1, 0.8, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1};
     if(measure==1){
-    for(int j=0;j<17;j+=1){  
+    for(int j=21;j<22;j+=1){ 
+        accept=0; 
         beta=betaarray[j];
         //~ deltatau=deltatauarray[j];
-        //~ if (beta<10){thermalizations=10;measurements=10;} 
-        //~ if (beta>=10){thermalizations=50;measurements=50;} 
-        sprintf(measname, "meas/measbeta%fNt%dNs%d.txt", beta, Nt, Ns);
+        //~ if (beta<0.8){delta=M_PI*0.8;} 
+        //~ if (beta>=0.8&&beta<2.0){delta=M_PI*0.3;} 
+        //~ if (beta>=2.0){delta=M_PI*0.15;} 
+        sprintf(measname, "meas/measbeta%fNt%dNs%dmeas%d.txt", beta, Nt, Ns, measurements);
         measfile=fopen(measname, "w+");
-        sprintf(thermname, "meas/thermbeta%fNt%dNs%d.txt", beta, Nt, Ns);
+        sprintf(thermname, "meas/thermbeta%fNt%dNs%dtherm%d.txt", beta, Nt, Ns, thermalizations);
         thermfile=fopen(thermname, "w+");
         sprintf(configsavename, "config/config%dbeta%fdeltatau%fNt%dNs%d",measurements, beta, deltatau, Nt, Ns);
         configsave=fopen(configsavename, "w+");
-    for(int i=0; i<thermalizations;i+=1){
-        gsl_vector_set(plaqtherm, i, sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta));
-    }
-    for(int i=0; i<measurements;i+=1){     
-        gsl_vector_set(plaq, i, sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta));
-        //~ writeconfig(lattice, configsave, Nt, Ns);
-    }
-    gsl_vector_fprintf(measfile, plaq, "%e");
-    gsl_vector_fprintf(thermfile, plaqtherm, "%e");
-    fclose(configsave);
-    fclose(measfile);
-    fclose(thermfile);
+        for(int i=0; i<thermalizations;i+=1){
+            sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta);
+            gsl_vector_set(plaqtherm, i, averageplaquette(lattice, Nt, Ns));
+        }
+        
+        for(int i=0; i<measurements;i+=1){
+            accept+= sweep(lattice, beta, deltatau, generator, measfile, Nt, Ns,  delta); 
+            gsl_vector_set(plaq, i, averageplaquette(lattice, Nt, Ns));
+        }
+        
+        fprintf(stdout, "%f\t%f\n", beta, accept/double(measurements));
+        gsl_vector_fprintf(measfile, plaq, "%e");
+        gsl_vector_fprintf(thermfile, plaqtherm, "%e");
+        fclose(configsave);
+        fclose(measfile);
+        fclose(thermfile);
     }}
     
     //~ printf("%f\t%f\t%d\t%d\t%f\t%f\n", beta, deltatau,Ns, Nt, mean(plaq, measurements), deviation(plaq, measurements, mean(plaq, measurements)));
-    for(int j=0;j<17;j+=1){  
+    int binarray[16]={1,2,4,8,16,32,52,72,92,112,132, 152, 172, 192, 212,232};
+    int binsize;
+    for(int j=0;j<21;j+=1){ 
         beta=betaarray[j];
+        //~ printf("%f,", beta);
         //~ deltatau=deltatauarray[j];
+        //~ sprintf(measname, "meas/measbeta%fNt%dNs%dmeas%d.txt", beta, Nt, Ns, measurements);
         sprintf(measname, "meas/measbeta%fNt%dNs%d.txt", beta, Nt, Ns);
         measfile=fopen(measname, "r");
         gsl_vector_fscanf(measfile, plaq);
+        
         mean_plaquette=mean(plaq, measurements);
         var_plaquette=deviation(plaq, measurements, mean_plaquette);
         autocorrelation(plaq, plaquette_correlation_binned, mean_plaquette);
         autocorrint=tauint(plaquette_correlation_binned, 10);
-        fprintf(stdout, "%f\t%f\t%.2d\t%.2d\t%.4d\t%e\t%e\t%e\n", beta, deltatau, Nt, Ns, 0, mean_plaquette, var_plaquette, autocorrint);
-        for (int binsize=1;binsize<2049;binsize*=2){
+        fprintf(stdout, "%f\t%f\t%.2d\t%.2d\t%.4d\t%e\t%e\t%e\n", beta, deltatau, Nt, Ns, 0, mean_plaquette, sqrt(var_plaquette), autocorrint);
+        
+        for (int bin=0;bin<16;bin++){
+            binsize=binarray[bin];
             binned_plaquette=gsl_vector_subvector(binned_plaquette_mem, 0, plaq->size/binsize);
             binning(plaq, &binned_plaquette.vector, binsize);
             bootstrap(&binned_plaquette.vector, generator, 1000, &mean_plaquette, &var_plaquette);
@@ -604,7 +617,9 @@ int main(int argc, char **argv){
             fprintf(stdout, "%f\t%f\t%.2d\t%.2d\t%.4d\t%e\t%e\t%e\n", beta, deltatau, Nt, Ns, binsize, mean_plaquette, sqrt(var_plaquette), autocorrint);
         }
         fclose(measfile);
+        //~ printf("%f\n", beta);
     }
+        //~ printf("%f\n", beta);
     //check if functions work
     //~ printf("%f\n", averageplaquette(lattice, Nt, Ns));
     //~ for(int i=0;i<20;i+=1){
@@ -656,6 +671,7 @@ int main(int argc, char **argv){
     //~ fclose(measfile);
     //~ fclose(configsave);
     gsl_vector_free(plaq);
+    gsl_vector_free(plaqtherm);
     gsl_vector_free(binned_plaquette_mem);
     gsl_vector_free(plaquette_correlation_binned);
 	return 0;
